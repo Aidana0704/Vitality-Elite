@@ -11,9 +11,10 @@ import {
   Line,
   RadialBarChart,
   RadialBar,
-  Legend
+  Legend,
+  PolarAngleAxis
 } from 'recharts';
-import { HealthLog, UserProfile, DailyWorkout, Language, DailyMealPlan } from '../types';
+import { HealthLog, UserProfile, DailyWorkout, Language, DailyMealPlan, Meal } from '../types';
 import { translations } from '../translations';
 
 interface DashboardProps {
@@ -36,50 +37,49 @@ const Dashboard: React.FC<DashboardProps> = React.memo(({ logs, profile, workout
     fats: 0
   }, [logs]);
 
-  // Fetch the meal plan from local storage to show on the dashboard
-  const dailyPlan: DailyMealPlan | null = useMemo(() => {
+  // Calculations for Adherence Score
+  const integrityData = useMemo(() => {
+    let mealPoints = 0;
+    let workoutPoints = 0;
+    
+    // Meal Adherence
     try {
-      const saved = localStorage.getItem('vitality_meal_plans');
-      if (saved) {
-        const plans = JSON.parse(saved);
-        // Ensure plans is an array before accessing the first element
-        return Array.isArray(plans) && plans.length > 0 ? plans[0] : null;
+      const consumed = JSON.parse(localStorage.getItem('vitality_consumed_meals') || '{}');
+      const plans: DailyMealPlan[] = JSON.parse(localStorage.getItem('vitality_meal_plans') || '[]');
+      if (plans.length > 0) {
+        const todayPlan = plans[0];
+        const mealList = [todayPlan.breakfast, todayPlan.lunch, todayPlan.dinner, ...(todayPlan.snacks || [])];
+        const completed = mealList.filter(m => consumed[m.name]).length;
+        mealPoints = Math.round((completed / Math.max(1, mealList.length)) * 100);
       }
-    } catch (e) {
-      console.error("Failed to load plans for dashboard", e);
-    }
-    return null;
-  }, []);
+    } catch (e) {}
 
-  const calorieDiff = useMemo(() => latestLog.caloriesConsumed - latestLog.caloriesBurned, [latestLog]);
-  
+    // Workout Adherence
+    try {
+      const completedExercises = JSON.parse(localStorage.getItem('vitality_completed_exercises') || '{}');
+      if (workoutPlan.length > 0) {
+        const todayWorkout = workoutPlan[0];
+        const completedCount = (todayWorkout.exercises || []).filter(ex => completedExercises[ex.name]).length;
+        workoutPoints = Math.round((completedCount / Math.max(1, (todayWorkout.exercises || []).length)) * 100);
+      }
+    } catch (e) {}
+
+    const total = Math.round((mealPoints + workoutPoints) / 2);
+    return { mealPoints, workoutPoints, total };
+  }, [workoutPlan]);
+
   const stats = useMemo(() => [
     { label: t.currentWeight, value: `${latestLog.weight} kg`, change: '-0.5kg', color: 'text-blue-500' },
-    { label: t.netCalories, value: calorieDiff, change: t.today, color: 'text-orange-500' },
+    { label: t.netCalories, value: latestLog.caloriesConsumed - latestLog.caloriesBurned, change: t.today, color: 'text-orange-500' },
     { label: t.waterIntake, value: `${((latestLog.waterIntake || 0) / 1000).toFixed(1)}L`, target: '3.0L', color: 'text-cyan-500' },
     { label: t.streak, value: `${logs.length} Days`, change: '+2', color: 'text-green-500' },
-  ], [latestLog, calorieDiff, logs.length, t]);
+  ], [latestLog, logs.length, t]);
 
   const goals = useMemo(() => {
-    let protein = profile.weight * 2;
-    let carbs = profile.weight * 3.5;
-    let fats = profile.weight * 0.8;
-
-    if (profile.goal === 'Weight Loss') {
-      protein = profile.weight * 2.2;
-      carbs = profile.weight * 2;
-      fats = profile.weight * 0.6;
-    } else if (profile.goal === 'Muscle Gain') {
-      protein = profile.weight * 2.5;
-      carbs = profile.weight * 5;
-      fats = profile.weight * 1;
-    } else if (profile.goal === 'Athletic Performance') {
-      protein = profile.weight * 2;
-      carbs = profile.weight * 6;
-      fats = profile.weight * 0.9;
-    }
-
-    return { protein: Math.round(protein), carbs: Math.round(carbs), fats: Math.round(fats) };
+    let p = profile.weight * 2, c = profile.weight * 3.5, f = profile.weight * 0.8;
+    if (profile.goal === 'Weight Loss') { p *= 1.1; c *= 0.6; f *= 0.8; }
+    else if (profile.goal === 'Muscle Gain') { p *= 1.25; c *= 1.4; f *= 1.2; }
+    return { protein: Math.round(p), carbs: Math.round(c), fats: Math.round(f) };
   }, [profile.weight, profile.goal]);
   
   const macroData = useMemo(() => [
@@ -88,160 +88,137 @@ const Dashboard: React.FC<DashboardProps> = React.memo(({ logs, profile, workout
     { name: t.fats, value: latestLog.fats || 0, target: goals.fats, fill: '#eab308' },
   ], [latestLog, goals, t]);
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-[#1a1a1a] border border-[#333] p-3 rounded-lg shadow-xl backdrop-blur-md">
-          <p className="text-gray-400 text-[10px] mb-1 uppercase tracking-widest">{label}</p>
-          {payload.map((p: any, i: number) => (
-             <p key={i} className="text-sm font-bold" style={{ color: p.color }}>
-               {p.name}: {p.value}
-             </p>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
+  const integrityChartData = [{ value: integrityData.total }];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, idx) => (
-          <div key={idx} className="bg-[#111] border border-[#222] p-5 rounded-2xl hover:border-blue-500/30 transition-all group overflow-hidden bg-gradient-to-br from-[#111] to-[#0a0a0a]">
-            <p className="text-[10px] text-gray-500 mb-1 uppercase font-bold tracking-widest">{stat.label}</p>
+          <div key={idx} className="bg-[#111] border border-white/5 p-6 rounded-3xl hover:border-blue-500/30 transition-all group relative overflow-hidden bg-gradient-to-br from-[#111] to-[#0a0a0a]">
+            <p className="text-[10px] text-gray-500 mb-2 uppercase font-black tracking-[0.2em]">{stat.label}</p>
             <div className="flex items-baseline space-x-2">
-              <span className={`text-2xl font-black ${stat.color}`}>{stat.value}</span>
-              {stat.change && <span className="text-[9px] text-gray-500 font-bold bg-[#1a1a1a] px-2 py-0.5 rounded-full border border-white/5">{stat.change}</span>}
+              <span className={`text-3xl font-black italic tracking-tighter ${stat.color}`}>{stat.value}</span>
+              {stat.change && <span className="text-[8px] text-gray-400 font-black bg-white/5 px-2 py-0.5 rounded-full">{stat.change}</span>}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        <div className="xl:col-span-8 space-y-6">
-          {/* Main Performance Chart */}
-          <div className="bg-[#111] border border-[#222] p-6 rounded-[2rem] shadow-2xl">
-            <div className="flex items-center justify-between mb-8 px-2">
-              <h3 className="text-lg font-bold text-gray-200 uppercase tracking-tighter">{t.performanceFlux}</h3>
-              <div className="flex space-x-3">
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                  <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Intake</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                  <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Weight</span>
-                </div>
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+        <div className="xl:col-span-8 space-y-8">
+          {/* Main Analytics Hub */}
+          <div className="bg-[#111] border border-white/5 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+            <div className="absolute right-0 top-0 p-8 opacity-5 font-black text-8xl italic select-none">DATA</div>
+            <div className="flex items-center justify-between mb-10">
+              <div>
+                <h3 className="text-xl font-black text-white italic uppercase tracking-tighter">{t.performanceFlux}</h3>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Biometric Signal Tracking</p>
+              </div>
+              <div className="flex space-x-4">
+                <div className="flex items-center space-x-2"><div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div><span className="text-[8px] text-gray-500 font-black uppercase">Intake</span></div>
+                <div className="flex items-center space-x-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div><span className="text-[8px] text-gray-500 font-black uppercase">Weight</span></div>
               </div>
             </div>
-            <div className="h-[300px] w-full min-h-[300px]">
-              <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+            <div className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={logs}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                  <CartesianGrid strokeDasharray="4 4" stroke="#222" vertical={false} />
                   <XAxis dataKey="date" stroke="#444" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis yAxisId="left" stroke="#444" fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar yAxisId="left" dataKey="caloriesConsumed" name={t.intake} fill="#f97316" opacity={0.4} radius={[4, 4, 0, 0]} barSize={16} />
-                  <Line yAxisId="left" type="monotone" dataKey="weight" name={t.currentWeight} stroke="#3b82f6" strokeWidth={3} dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 5, strokeWidth: 0, fill: '#fff' }} />
+                  <Tooltip 
+                    contentStyle={{ background: '#0a0a0a', border: '1px solid #333', borderRadius: '12px' }}
+                    itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                  />
+                  <Bar yAxisId="left" dataKey="caloriesConsumed" name={t.intake} fill="#f97316" opacity={0.3} radius={[6, 6, 0, 0]} barSize={20} />
+                  <Line yAxisId="left" type="monotone" dataKey="weight" name={t.currentWeight} stroke="#3b82f6" strokeWidth={4} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 0 }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Daily Nutrition Protocol Preview - Optimized for clear daily plan view */}
-          <div className="bg-[#111] border border-[#222] p-8 rounded-[2rem] shadow-2xl relative overflow-hidden group">
-            <div className="absolute right-0 top-0 p-8 opacity-5 pointer-events-none">
-              <span className="text-8xl font-black italic">FUEL</span>
-            </div>
-            <div className="relative z-10">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.4em]">Active Nutrition Protocol</h3>
-                {dailyPlan && <span className="text-[9px] font-black text-gray-600 uppercase tracking-widest italic">{dailyPlan.day} Execution</span>}
-              </div>
-
-              {dailyPlan ? (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  {[
-                    { label: 'Breakfast', meal: dailyPlan.breakfast, time: '07:30', icon: '☀️' },
-                    { label: 'Snack I', meal: dailyPlan.snacks?.[0], time: '10:30', icon: '🍎' },
-                    { label: 'Lunch', meal: dailyPlan.lunch, time: '13:00', icon: '中午' },
-                    { label: 'Snack II', meal: dailyPlan.snacks?.[1], time: '16:00', icon: '☕' },
-                    { label: 'Dinner', meal: dailyPlan.dinner, time: '19:30', icon: '🌙' }
-                  ].map((item, i) => (
-                    <div key={i} className="bg-black/40 p-4 rounded-3xl border border-white/5 hover:border-emerald-500/40 transition-all flex flex-col justify-between h-32 group/item">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <p className="text-[7px] text-gray-600 font-black uppercase tracking-widest">{item.time}</p>
-                          <span className="text-xs grayscale group-hover/item:grayscale-0 transition-all">{item.icon}</span>
-                        </div>
-                        <p className="text-[10px] font-black text-white uppercase italic truncate">{item.meal?.name || 'Protocol Standby'}</p>
-                      </div>
-                      <div className="flex items-center justify-between text-[8px] font-bold text-gray-500 uppercase mt-2">
-                        <span>{item.meal?.calories || 0} kcal</span>
-                        <span className="text-emerald-500">{item.meal?.protein || 0}g P</span>
-                      </div>
-                    </div>
-                  ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+             {/* Adherence Scoring */}
+             <div className="bg-[#111] border border-white/5 p-8 rounded-[2.5rem] flex flex-col items-center justify-center relative group">
+                <div className="absolute top-6 left-8">
+                  <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest italic">{t.fidelityScore}</h4>
                 </div>
-              ) : (
-                <div className="py-12 text-center bg-black/20 rounded-[2rem] border border-dashed border-[#333] flex flex-col items-center justify-center">
-                   <div className="w-12 h-12 bg-[#111] rounded-2xl flex items-center justify-center mb-4 shadow-xl">
-                      <span className="text-2xl">🍱</span>
+                <div className="h-64 w-64 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadialBarChart cx="50%" cy="50%" innerRadius="75%" outerRadius="100%" barSize={12} data={integrityChartData} startAngle={90} endAngle={450}>
+                      <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+                      <RadialBar background dataKey="value" cornerRadius={30} fill={integrityData.total > 80 ? '#10b981' : '#3b82f6'} />
+                    </RadialBarChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-5xl font-black italic tracking-tighter text-white">{integrityData.total}%</span>
+                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest mt-1">Protocol Sync</span>
+                  </div>
+                </div>
+                <div className="w-full grid grid-cols-2 gap-4 mt-4">
+                   <div className="bg-black/40 p-4 rounded-2xl border border-white/5 text-center">
+                      <p className="text-[8px] text-gray-500 font-black uppercase mb-1">Nutrition</p>
+                      <p className="text-lg font-black text-emerald-500 italic">{integrityData.mealPoints}%</p>
                    </div>
-                   <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Nutritional Matrix Offline</p>
-                   <p className="text-[8px] text-gray-600 font-bold uppercase tracking-[0.2em] mt-3 italic max-w-xs leading-relaxed">
-                     Visit the Meal Plan sector to generate your high-fidelity dietary itinerary and prep strategy.
-                   </p>
+                   <div className="bg-black/40 p-4 rounded-2xl border border-white/5 text-center">
+                      <p className="text-[8px] text-gray-500 font-black uppercase mb-1">Training</p>
+                      <p className="text-lg font-black text-blue-500 italic">{integrityData.workoutPoints}%</p>
+                   </div>
                 </div>
-              )}
-            </div>
+             </div>
+
+             {/* Bio-Active Focus */}
+             <div className="bg-blue-600/5 border border-blue-500/10 p-8 rounded-[2.5rem] relative overflow-hidden group">
+                <div className="absolute -right-6 -bottom-6 text-9xl grayscale opacity-5 group-hover:grayscale-0 group-hover:opacity-10 transition-all duration-700">🧬</div>
+                <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest italic mb-6">{t.bioActive} Insights</h4>
+                <div className="space-y-6 relative z-10">
+                   <p className="text-sm text-gray-400 leading-relaxed italic">
+                     "Based on your recent adherence flux, your metabolic recovery window is peaking. Focus on high-fidelity protein intake in the next 4 hours to maximize anabolic signaling."
+                   </p>
+                   <div className="pt-4 border-t border-white/5">
+                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-[0.2em] mb-3">Protocol Optimization</p>
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-xl">🥗</div>
+                        <div>
+                          <p className="text-[10px] font-black text-white uppercase italic">Increased Hydration Cycle</p>
+                          <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest">Target: +500ml Pre-Workout</p>
+                        </div>
+                      </div>
+                   </div>
+                </div>
+             </div>
           </div>
         </div>
 
-        <div className="xl:col-span-4 space-y-6">
-          <div className="bg-[#111] border border-[#222] p-6 rounded-[2rem] shadow-xl">
-             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6 text-center">{t.macroSynergy}</h3>
-             <div className="h-[200px] w-full min-h-[200px]">
-               <ResponsiveContainer width="100%" height="100%" minHeight={200}>
-                 <RadialBarChart cx="50%" cy="50%" innerRadius="30%" outerRadius="100%" barSize={10} data={macroData}>
+        <div className="xl:col-span-4 space-y-8">
+          <div className="bg-[#111] border border-white/5 p-8 rounded-[2.5rem] shadow-xl">
+             <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-10 text-center">{t.macroSynergy}</h3>
+             <div className="h-[250px] w-full">
+               <ResponsiveContainer width="100%" height="100%">
+                 <RadialBarChart cx="50%" cy="50%" innerRadius="30%" outerRadius="100%" barSize={12} data={macroData}>
                    <RadialBar background dataKey="value" cornerRadius={20} />
                    <Legend iconSize={8} layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
                  </RadialBarChart>
                </ResponsiveContainer>
              </div>
+             <div className="mt-8 space-y-4">
+                {macroData.map((m, i) => (
+                  <div key={i} className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest italic">
+                    <span className="text-gray-500">{m.name}</span>
+                    <span className="text-white">{m.value}g / {m.target}g</span>
+                  </div>
+                ))}
+             </div>
           </div>
 
-          <div className="bg-[#111] border border-[#222] p-8 rounded-[2rem] shadow-xl relative overflow-hidden group">
-            <div className="absolute -left-4 top-0 h-full w-1 bg-gradient-to-b from-blue-500 via-emerald-500 to-indigo-500"></div>
-            <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-8 italic">Strategy Synergy Analysis</h3>
-            <div className="space-y-6">
-              {macroData.map((macro, idx) => {
-                const percentage = Math.min(100, Math.round((macro.value / (macro.target || 1)) * 100));
-                return (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex justify-between items-end">
-                      <div className="flex flex-col">
-                        <span className="text-[11px] font-bold text-gray-300">{macro.name}</span>
-                        <span className="text-[7px] text-gray-600 font-black uppercase tracking-widest">Protocol Alignment</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] text-gray-500 font-bold">
-                          <span className="text-white font-black">{macro.value}g</span> / {macro.target}g
-                        </span>
-                        <p className={`text-[8px] font-black uppercase ${percentage >= 90 ? 'text-emerald-500' : 'text-blue-500'}`}>{percentage}% Optimized</p>
-                      </div>
-                    </div>
-                    <div className="h-1.5 w-full bg-black rounded-full overflow-hidden border border-white/5">
-                      <div 
-                        className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.3)]" 
-                        style={{ width: `${percentage}%`, backgroundColor: macro.fill }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="bg-gradient-to-br from-indigo-950 to-black border border-white/5 p-8 rounded-[2.5rem] relative overflow-hidden shadow-2xl">
+             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.1),transparent)]"></div>
+             <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] italic mb-6">{t.performanceNote}</h4>
+             <p className="text-xs text-gray-400 leading-relaxed font-bold italic relative z-10">
+               "System stability is optimal. Your current split for {profile.experienceLevel} level is yielding high force-output consistency. Stay the course on the evening recovery protocol."
+             </p>
+             <div className="mt-8 flex justify-end">
+                <span className="text-[8px] font-black text-indigo-600 uppercase tracking-[0.5em] italic">Vitality AI Lab</span>
+             </div>
           </div>
         </div>
       </div>

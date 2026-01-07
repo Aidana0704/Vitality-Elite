@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { UserProfile, Language, MembershipTier } from '../types';
+import { UserProfile, Language, MembershipTier, ExperienceLevel } from '../types';
 import { translations } from '../translations';
 
 interface ProfileProps {
@@ -27,6 +27,8 @@ const Profile: React.FC<ProfileProps> = ({ profile, setProfile, language }) => {
       default: return 'from-gray-400 to-gray-600';
     }
   };
+
+  const experienceLevels: ExperienceLevel[] = ['Beginner', 'Intermediate', 'Advanced', 'Elite'];
 
   return (
     <div className="max-w-5xl mx-auto space-y-12 pb-20 animate-in fade-in duration-700">
@@ -122,6 +124,26 @@ const Profile: React.FC<ProfileProps> = ({ profile, setProfile, language }) => {
                 <option value="Maintenance">Maintenance</option>
                 <option value="Athletic Performance">Athletic Performance</option>
               </select>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-[9px] font-black text-gray-500 uppercase tracking-widest ml-1">Experience Rank</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {experienceLevels.map(level => (
+                  <button
+                    key={level}
+                    disabled={!isEditing}
+                    onClick={() => setEditedProfile({...editedProfile, experienceLevel: level})}
+                    className={`py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                      (isEditing ? editedProfile.experienceLevel : profile.experienceLevel) === level
+                        ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]'
+                        : 'bg-black/40 border-white/5 text-gray-600'
+                    }`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4 md:col-span-2">

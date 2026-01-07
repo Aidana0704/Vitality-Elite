@@ -3,12 +3,15 @@ export type Language = 'en' | 'ru' | 'es';
 
 export type MembershipTier = 'Standard' | 'Elite' | 'Platinum' | 'Founders';
 
+export type ExperienceLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'Elite';
+
 export interface UserProfile {
   name: string;
   age: number;
   weight: number;
   height: number;
   goal: 'Weight Loss' | 'Muscle Gain' | 'Maintenance' | 'Athletic Performance';
+  experienceLevel: ExperienceLevel;
   activityLevel: 'Sedentary' | 'Moderate' | 'Active' | 'Very Active';
   dietaryPreference: string;
   location?: string;

@@ -27,6 +27,14 @@ const MealImage: React.FC<{
   const observerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 
+  // Sync state with parent updates (crucial for edited images)
+  useEffect(() => {
+    if (existingUrl) {
+      setImageUrl(existingUrl);
+      setLoading(false);
+    }
+  }, [existingUrl]);
+
   useEffect(() => {
     if (imageUrl) return;
     const observer = new IntersectionObserver(([entry]) => {
@@ -133,8 +141,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
   };
 
   useEffect(() => { 
-    // Only auto-fetch if we have absolutely nothing. 
-    // Otherwise, users can manual-refresh to avoid unexpected waiting.
     if (!plans || plans.length === 0) fetchPlans(); 
   }, [language]);
 
@@ -148,6 +154,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
   };
 
   const updateMealImageInState = useCallback((mealName: string, url: string) => {
+    // Also update global cache so all instances reflect the change
+    SESSION_IMAGE_CACHE[mealName] = url;
+    
     setPlans(prev => (prev || []).map(day => {
       const update = (m: Meal) => m && m.name === mealName ? { ...m, imageUrl: url } : m;
       return { 
@@ -160,14 +169,15 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
     }));
   }, []);
 
-  const handleEditImage = async () => {
-    if (!selectedMeal?.imageUrl || !editPrompt.trim()) return;
+  const handleEditImage = async (promptOverride?: string) => {
+    const promptToUse = promptOverride || editPrompt;
+    if (!selectedMeal?.imageUrl || !promptToUse.trim()) return;
     setIsEditingImage(true);
     try {
-      const newUrl = await editMealImage(selectedMeal.imageUrl, editPrompt);
+      const newUrl = await editMealImage(selectedMeal.imageUrl, promptToUse);
       updateMealImageInState(selectedMeal.name, newUrl);
       setSelectedMeal(prev => prev ? { ...prev, imageUrl: newUrl } : null);
-      setEditPrompt('');
+      if (!promptOverride) setEditPrompt('');
     } catch (err) {
       console.error(err);
     } finally {
@@ -211,7 +221,34 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
     return Array.from(new Set(list.map(i => i.category || 'Other')));
   }, [prepStrategy]);
 
-  // Loading indicator for initial fetch only
+  // Refined edit presets categorized by function
+  const editCategories = [
+    {
+      title: '✨ Garnish & Toppings',
+      presets: [
+        { label: 'Fresh Herbs', prompt: 'Add a fresh herb garnish of micro-greens and a sprinkle of seeds' },
+        { label: 'Sauce Drizzle', prompt: 'Add an elegant drizzle of balsamic glaze or professional sauce' },
+        { label: 'Lemon/Lime', prompt: 'Add a fresh citrus wedge (lemon/lime) on the side' }
+      ]
+    },
+    {
+      title: '☀️ Lighting & Atmosphere',
+      presets: [
+        { label: 'Warm Glow', prompt: 'Change lighting to a warm, golden-hour natural sunlight' },
+        { label: 'High Contrast', prompt: 'Moody, high-contrast professional food photography lighting' },
+        { label: 'Clean White', prompt: 'Bright, clean studio lighting with pure white highlights' }
+      ]
+    },
+    {
+      title: '🖼️ Environmental Setting',
+      presets: [
+        { label: 'Rustic Wood', prompt: 'Change background to a rustic, weathered dark wood table' },
+        { label: 'Dark Marble', prompt: 'Change background to an elegant dark charcoal marble surface' },
+        { label: 'Minimalist', prompt: 'Clean white porcelain plate on a minimalist stone background' }
+      ]
+    }
+  ];
+
   if (loading && (!plans || plans.length === 0)) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-6">
       <div className="relative">
@@ -224,7 +261,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700 pb-20">
-      {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h3 className="text-5xl font-black text-white italic uppercase tracking-tighter">Performance Fuel</h3>
@@ -236,7 +272,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
           </div>
         </div>
 
-        {/* Navigation Switch */}
         <div className="flex bg-[#111] p-1.5 border border-[#222] rounded-[1.5rem] w-full md:w-auto overflow-hidden">
           <button 
             onClick={() => setView('daily')}
@@ -259,10 +294,8 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
 
       {view === 'daily' ? (
         <div className="space-y-10">
-          {/* Day Selector & Macro Overview */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
             <div className="xl:col-span-8 space-y-8">
-              {/* Timeline Hub */}
               <div className="bg-[#111] border border-[#222] p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
                 <div className="absolute right-0 top-0 w-full h-full bg-gradient-to-br from-emerald-500/5 to-transparent pointer-events-none"></div>
                 <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
@@ -318,7 +351,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
                 </div>
               </div>
 
-              {/* Detail Itinerary Timeline */}
               <div className="relative pl-12 md:pl-16 space-y-8 pb-10">
                   <div className="absolute left-6 md:left-8 top-0 bottom-0 w-px bg-gradient-to-b from-emerald-500 via-emerald-500/10 to-transparent"></div>
                   {[
@@ -376,7 +408,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
               </div>
             </div>
 
-            {/* Daily Status Sidebar (Stats) */}
             <div className="xl:col-span-4 space-y-8">
                <div className="bg-[#111] border border-[#222] rounded-[3rem] p-10 space-y-10 shadow-2xl relative overflow-hidden group">
                   <div className="absolute -right-10 -top-10 text-white/5 text-[10rem] font-black italic group-hover:text-emerald-500/5 transition-colors">BIO</div>
@@ -435,7 +466,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
           </div>
         </div>
       ) : (
-        /* LOGISTICS PROTOCOL (PREP STRATEGY) VIEW */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in slide-in-from-bottom-8 duration-700">
           <div className="lg:col-span-5 space-y-8">
             <div className="bg-[#111] border border-[#222] rounded-[3rem] p-10 shadow-2xl relative overflow-hidden">
@@ -528,18 +558,16 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
         </div>
       )}
 
-      {/* Laboratory Detail Modal (Meal Detail) */}
       {selectedMeal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/98 backdrop-blur-3xl animate-in fade-in duration-500">
           <div className="bg-[#0a0a0a] border border-[#222] w-full max-w-7xl rounded-[4rem] overflow-hidden shadow-[0_0_120px_rgba(16,185,129,0.1)] flex flex-col md:grid md:grid-cols-12 max-h-[94vh]">
-            {/* Left: Image Panel */}
             <div className="md:col-span-5 relative h-80 md:h-auto overflow-hidden bg-black border-r border-[#222]">
               {isEditingImage ? (
                 <div className="w-full h-full flex flex-col items-center justify-center space-y-8 p-12">
                   <div className="w-20 h-20 border-2 border-emerald-500/10 border-t-emerald-500 rounded-full animate-spin shadow-[0_0_30px_rgba(16,185,129,0.3)]"></div>
                   <div className="text-center">
-                    <p className="text-[12px] text-emerald-500 font-black uppercase tracking-[0.5em] animate-pulse">Bio-Visual Rendering</p>
-                    <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest mt-2">Neural Frame Synchronization...</p>
+                    <p className="text-[12px] text-emerald-500 font-black uppercase tracking-[0.5em] animate-pulse">Neural Aesthetic Tuning</p>
+                    <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest mt-2">Reconstructing Visual Geometry...</p>
                   </div>
                 </div>
               ) : selectedMeal.imageUrl ? (
@@ -558,7 +586,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
               </div>
             </div>
             
-            {/* Right: Info Panel */}
             <div className="md:col-span-7 p-12 md:p-16 overflow-y-auto custom-scrollbar flex flex-col bg-[#0d0d0d]">
               {selectedMeal.herbalifeSubstitution && (
                 <div className="mb-12 p-10 bg-gradient-to-br from-emerald-600/5 to-transparent border border-emerald-500/10 rounded-[3rem] relative overflow-hidden group">
@@ -601,11 +628,52 @@ const MealPlanner: React.FC<MealPlannerProps> = ({ profile, language }) => {
                     </div>
                   </div>
 
-                  <div className="p-8 bg-emerald-500/2 border border-emerald-500/5 rounded-[2.5rem] space-y-6">
-                    <p className="text-[9px] font-black text-gray-600 uppercase tracking-[0.4em] italic">Visual Aesthetic Refinement</p>
-                    <div className="flex space-x-3">
-                      <input type="text" placeholder="e.g. 'Add fresh garnish', 'Daylight lighting'..." value={editPrompt} onChange={(e) => setEditPrompt(e.target.value)} className="flex-1 bg-black border border-white/5 rounded-2xl px-5 py-4 text-[11px] text-white focus:outline-none focus:border-emerald-500/50 transition-all font-bold placeholder:text-gray-800" />
-                      <button onClick={handleEditImage} disabled={isEditingImage || !editPrompt.trim()} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white px-8 rounded-2xl text-[10px] font-black uppercase italic transition-all active:scale-95 shadow-xl">Synthesize</button>
+                  <div className="p-8 bg-emerald-500/5 border border-emerald-500/10 rounded-[2.5rem] space-y-8 relative overflow-hidden group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent pointer-events-none"></div>
+                    <div className="relative z-10">
+                      <p className="text-[9px] font-black text-emerald-400 uppercase tracking-[0.4em] italic mb-6">Visual Aesthetic Refinement</p>
+                      
+                      {/* Categorized Refinement Presets */}
+                      <div className="space-y-6 mb-8">
+                        {editCategories.map(cat => (
+                          <div key={cat.title} className="space-y-3">
+                            <p className="text-[8px] font-black text-gray-600 uppercase tracking-widest">{cat.title}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {cat.presets.map(preset => (
+                                <button
+                                  key={preset.label}
+                                  disabled={isEditingImage}
+                                  onClick={() => handleEditImage(preset.prompt)}
+                                  className="px-4 py-2 bg-black/40 border border-white/10 hover:border-emerald-500/40 rounded-xl text-[9px] font-black uppercase text-gray-400 hover:text-white transition-all active:scale-95 disabled:opacity-30 flex items-center space-x-2"
+                                >
+                                  <span>{preset.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-3">
+                        <p className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Custom Modification Prompt</p>
+                        <div className="flex space-x-3">
+                          <input 
+                            type="text" 
+                            placeholder="e.g. 'Add extra steam', 'Brighter colors'..." 
+                            value={editPrompt} 
+                            onChange={(e) => setEditPrompt(e.target.value)} 
+                            onKeyDown={(e) => e.key === 'Enter' && handleEditImage()}
+                            className="flex-1 bg-black border border-white/5 rounded-2xl px-5 py-4 text-[11px] text-white focus:outline-none focus:border-emerald-500/50 transition-all font-bold placeholder:text-gray-800" 
+                          />
+                          <button 
+                            onClick={() => handleEditImage()} 
+                            disabled={isEditingImage || !editPrompt.trim()} 
+                            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white px-8 rounded-2xl text-[10px] font-black uppercase italic transition-all active:scale-95 shadow-xl shadow-emerald-600/20"
+                          >
+                            {isEditingImage ? 'Tuning...' : 'Synthesize'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -105,12 +105,10 @@ export const getMealPlan = async (profile: UserProfile, lang: Language): Promise
     
     Return the response in ${getLanguageName(lang)}.`;
 
-  // Switching to gemini-3-flash-preview for speed and efficiency
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
     config: {
-      // Disabling thinking budget to prioritize minimal latency
       thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: "application/json",
       responseSchema: {
@@ -247,11 +245,13 @@ export const getGymRecommendations = async (
 
 export const getWorkoutPlan = async (profile: UserProfile, lang: Language): Promise<DailyWorkout[]> => {
   const ai = getAiClient();
-  const prompt = `Create a 5-day elite split workout plan for: ${JSON.stringify(profile)}.
-    Focus on ${profile.goal}. For each exercise, provide sets, reps, target muscles, a "Coaching Cue", and a detailed "Description" covering primary benefits and proper execution technique.
+  const prompt = `Create a 5-day elite split workout plan for a ${profile.experienceLevel} user.
+    Context: ${JSON.stringify(profile)}.
+    Goal: ${profile.goal}.
+    MANDATORY: Tailor exercise choice, sets, and reps strictly to the ${profile.experienceLevel} experience level.
+    For each exercise, provide sets, reps, target muscles, a "Coaching Cue", and a detailed "Description".
     Return in ${getLanguageName(lang)}.`;
 
-  // Switching to gemini-3-flash-preview for significantly faster generation
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
@@ -295,8 +295,10 @@ export const getExerciseVideo = async (exerciseName: string, onProgress: (msg: s
   
   let operation = await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
-    prompt: `A high-quality 3D demonstration of a fitness professional performing a perfect ${exerciseName}. 
-             Cinematic gym lighting, focus on form and muscle contraction.`,
+    prompt: `A 3D educational demonstration of a fitness professional performing a perfect ${exerciseName}. 
+             Cinematic gym lighting. Camera angle: side or 45-degree view. 
+             Extreme focus on proper form, full range of motion, and muscle contraction. 
+             No text overlays. Ensure biomechanical accuracy and postural alignment.`,
     config: {
       numberOfVideos: 1,
       resolution: '720p',
@@ -304,12 +306,21 @@ export const getExerciseVideo = async (exerciseName: string, onProgress: (msg: s
     }
   });
 
-  onProgress("Synthesizing Movement Dynamics...");
+  onProgress("Accessing Neural Compute Pipeline...");
+  let pollCount = 0;
   while (!operation.done) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    pollCount++;
+    if (pollCount === 2) onProgress("Synthesizing Movement Dynamics...");
+    if (pollCount === 4) onProgress("Mapping Muscle Group Activation...");
+    if (pollCount === 7) onProgress("Refining Biomechanical Precision...");
+    if (pollCount === 10) onProgress("Rendering Atmospheric Lighting...");
+    if (pollCount === 14) onProgress("Finalizing Visual Sequence...");
+    
+    await new Promise(resolve => setTimeout(resolve, 8000));
     operation = await ai.operations.getVideosOperation({ operation: operation });
   }
 
+  onProgress("Simulation Complete. Finalizing Stream.");
   const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
   return `${downloadLink}&key=${process.env.API_KEY}`;
 };

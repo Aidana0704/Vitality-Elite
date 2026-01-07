@@ -23,6 +23,7 @@ const INITIAL_PROFILE: UserProfile = {
   weight: 85,
   height: 182,
   goal: 'Muscle Gain',
+  experienceLevel: 'Intermediate',
   activityLevel: 'Active',
   dietaryPreference: 'High Protein, No Seafood',
   location: 'San Francisco, CA',
