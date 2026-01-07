@@ -1,0 +1,7 @@
+{
+  "name": "Vitality Elite",
+  "description": "A premium health tracker, gym recommendation engine, and AI-powered meal planning platform.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
